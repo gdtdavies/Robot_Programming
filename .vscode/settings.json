@@ -1,0 +1,14 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/george/Documents/Lincoln-year/Sem1/Robot_Programming/build/pothole_finder",
+        "/home/george/Documents/Lincoln-year/Sem1/Robot_Programming/install/pothole_finder/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/george/Documents/Lincoln-year/Sem1/Robot_Programming/build/pothole_finder",
+        "/home/george/Documents/Lincoln-year/Sem1/Robot_Programming/install/pothole_finder/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
+}
