@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'find_pothole = pothole_finder.find_pothole:main'
+            'find_pothole = pothole_finder.find_pothole:main',
+            'waypoint_follower = pothole_finder.waypoint_follower:main'
         ],
     },
 )

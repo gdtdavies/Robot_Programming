@@ -17,7 +17,7 @@ from time import sleep
 
 class PotholeFinder(Node):
 
-    graphical = False
+    graphical = True
 
     def __init__(self):
         super().__init__('find_pothole')
@@ -74,7 +74,7 @@ class PotholeFinder(Node):
         # imshow("Image window", cv_image)
 
         numPotholes, pixels, stats, centroids = self.mask(cv_image, 'potholes', (150, 0, 150), (255, 100, 255))
-        _, _, _, _ = self.mask(cv_image, 'lines', (0, 50, 200), (100, 255, 255))
+        #_, _, _, _ = self.mask(cv_image, 'lines', (0, 50, 200), (100, 255, 255))
 
 
         waitKey(1)
