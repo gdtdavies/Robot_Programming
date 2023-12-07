@@ -22,7 +22,8 @@ setup(
         'console_scripts': [
             'find_pothole = pothole_finder.find_pothole:main',
             'waypoint_follower = pothole_finder.waypoint_follower:main',
-            'navigator = pothole_finder.navigator:main'
+            'navigator = pothole_finder.navigator:main',
+            'image_projection = pothole_finder.image_projection:main',
         ],
     },
 )
