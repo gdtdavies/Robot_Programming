@@ -24,6 +24,7 @@ setup(
             'waypoint_follower = pothole_finder.waypoint_follower:main',
             'navigator = pothole_finder.navigator:main',
             'image_projection = pothole_finder.image_projection:main',
+            'pothole_counter = pothole_finder.pothole_counter:main',
         ],
     },
 )
