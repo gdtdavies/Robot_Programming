@@ -20,7 +20,6 @@ class Navigator(Node):
         # Process the laser scan data and calculate the desired robot velocity
         # based on the distance to the walls
 
-        
         nb_samples = len(msg.ranges)
 
         left = min(msg.ranges[0:int(nb_samples/2)-1])
@@ -29,23 +28,23 @@ class Navigator(Node):
 
         print(f"left: {left}, right: {right}, front: {front}")
 
-        # Example: If the robot is too close to the right wall, turn left
+        # If the robot is too close to the right wall, turn left
         if right < 0.20:
             self.twist.angular.z = -1.0
             print("turning left")
         elif left < 0.20:
             self.twist.angular.z = 1.0
             print("turning right")
-        # Example: If the robot is too close to the right wall, turn left
+        # If the robot is too close to the right wall, turn left
         else:
             self.twist.angular.z = 0.0
             print("not turning")
 
-        # Example: If the robot is far enough from the walls in front, move forward
+        # If the robot is far enough from the walls in front, move forward
         if front > 0.19:
             self.twist.linear.x = 0.125
             print("moving forward")
-        # Example: If the robot is too close to the walls, reverse a little
+        # If the robot is too close to the walls, reverse a little
         else:
             self.twist.linear.x = -0.05
             # self.twist.angular.z *= -1.0 # invert the steering

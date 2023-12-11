@@ -86,8 +86,7 @@ class ImageProjection(Node):
         out = cv2.connectedComponentsWithStats(image_mask , 4, cv2.CV_32S)
         (numLabels, _, _, centroids) = out
 
-        # print(numLabels)
-        #object_locations = []
+
         for i in range(1, numLabels): # skip the first component as it is the background
             (cX, cY) = centroids[i]
             cv2.circle(image_color, (int(cX), int(cY)), 4, (0, 255, 0), -1)
@@ -102,8 +101,6 @@ class ImageProjection(Node):
             # get the depth reading at the centroid location
             depth_value = image_depth[int(depth_coords[0]), int(depth_coords[1])]
 
-            
-
             # calculate object's 3d location in camera coords
             camera_coords = self.camera_model.projectPixelTo3dRay((cX, cY)) #project the image coords (x,y) into 3D ray in camera coords 
             camera_coords = [x/camera_coords[2] for x in camera_coords] # adjust the resulting vector so that z = 1
@@ -117,10 +114,14 @@ class ImageProjection(Node):
             object_location.position.y = camera_coords[1]
             object_location.position.z = camera_coords[2]
 
-
             # print out the coordinates in the odom frame
-            transform = self.get_tf_transform('depth_link', 'map')
+            transform = self.get_tf_transform('depth_link', 'odom')
             p_camera = do_transform_pose(object_location, transform)
+
+            if abs(p_camera.position.x) > 5 or abs(p_camera.position.y) > 5 or abs(p_camera.position.z) > 5:
+                continue
+
+            # print('Pothole coords: ', p_camera.position)
 
             # check if the array is empty
             if len(ImageProjection.pothole_poses.poses) == 0:
@@ -129,22 +130,39 @@ class ImageProjection(Node):
                 found = False
                 #check if the pothole is already in the list
                 for pose in ImageProjection.pothole_poses.poses:
-                    if abs(pose.position.x - p_camera.position.x) < 10.0 \
-                    and abs(pose.position.z - p_camera.position.z) < 10.0:
+                    if abs(pose.position.x - p_camera.position.x) < 0.22 \
+                    and abs(pose.position.y - p_camera.position.y) < 0.22:
                         found = True
+                        # print('Pothole already in the list')
+                        # print('Pothole coords: ', pose.position)
                         pose.position.x = (pose.position.x + p_camera.position.x) / 2
                         pose.position.y = (pose.position.y + p_camera.position.y) / 2
                         pose.position.z = (pose.position.z + p_camera.position.z) / 2
                         break
                 if not found:
                     ImageProjection.pothole_poses.poses.append(p_camera)
+
+            for i, pose in enumerate(ImageProjection.pothole_poses.poses):
+                #if it finds two potholes with similar coordinates, it will combine them
+                for j, pose2 in enumerate(ImageProjection.pothole_poses.poses):
+                    if pose == pose2:
+                        continue
+                    if abs(pose.position.x - pose2.position.x) < 0.21 \
+                    and abs(pose.position.y - pose2.position.y) < 0.21 :
+                        pose.position.x = (pose.position.x + pose2.position.x) / 2
+                        pose.position.y = (pose.position.y + pose2.position.y) / 2
+                        pose.position.z = (pose.position.z + pose2.position.z) / 2
+                        ImageProjection.pothole_poses.poses.remove(pose2)
+                        print(f'Pothole {i+1} and {j+1} merged')
+                        break
             
-            #object_locations.append(p_camera)        
             # publish so we can see that in rviz
+            # for pose in ImageProjection.pothole_poses.poses:
+            #     self.object_location_pub.publish(pose)
             self.object_location_pub.publish(ImageProjection.pothole_poses)
 
         for i, pose in enumerate(ImageProjection.pothole_poses.poses):
-            print('map coords', i, ':', pose.position)
+            print('map coords', i+1, ':', pose.position)
         print('\n')
 
         if self.visualisation:
