@@ -37,11 +37,15 @@ class ImageProjection(Node):
         
         self.object_location_pub = self.create_publisher(PoseArray, '/limo/object_location', 10)
 
-        self.image_sub = self.create_subscription(Image, '/limo/depth_camera_link/image_raw', 
-                                                  self.image_color_callback, qos_profile=qos.qos_profile_sensor_data)
+        self.image_sub = self.create_subscription(Image, 
+                                                  '/limo/depth_camera_link/image_raw', 
+                                                  self.image_color_callback, 
+                                                  qos_profile=qos.qos_profile_sensor_data)
         
-        self.image_sub = self.create_subscription(Image, '/limo/depth_camera_link/depth/image_raw', 
-                                                  self.image_depth_callback, qos_profile=qos.qos_profile_sensor_data)
+        self.image_sub = self.create_subscription(Image, 
+                                                  '/limo/depth_camera_link/depth/image_raw', 
+                                                  self.image_depth_callback, 
+                                                  qos_profile=qos.qos_profile_sensor_data)
         
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -92,10 +96,12 @@ class ImageProjection(Node):
             cv2.circle(image_color, (int(cX), int(cY)), 4, (0, 255, 0), -1)
 
             # "map" from color to depth image
-            depth_coords = (image_depth.shape[0]/2 + (cX - image_color.shape[0]/2)*self.color2depth_aspect, image_depth.shape[1]/2 + (cY - image_color.shape[1]/2)*self.color2depth_aspect)
+            depth_coords = (image_depth.shape[0]/2 + (cX - image_color.shape[0]/2)*self.color2depth_aspect,\
+                            image_depth.shape[1]/2 + (cY - image_color.shape[1]/2)*self.color2depth_aspect)
 
             # check if the centroid is within the image boudaries
-            if depth_coords[0] < 0 or depth_coords[0] >= image_depth.shape[0] or depth_coords[1] < 0 or depth_coords[1] >= image_depth.shape[1]:
+            if depth_coords[0] < 0 or depth_coords[0] >= image_depth.shape[0] \
+            or depth_coords[1] < 0 or depth_coords[1] >= image_depth.shape[1]:
                 continue
 
             # get the depth reading at the centroid location
@@ -123,6 +129,7 @@ class ImageProjection(Node):
 
             # print('Pothole coords: ', p_camera.position)
 
+            distance = 0.22
             # check if the array is empty
             if len(ImageProjection.pothole_poses.poses) == 0:
                 ImageProjection.pothole_poses.poses.append(p_camera)
@@ -130,8 +137,8 @@ class ImageProjection(Node):
                 found = False
                 #check if the pothole is already in the list
                 for pose in ImageProjection.pothole_poses.poses:
-                    if abs(pose.position.x - p_camera.position.x) < 0.22 \
-                    and abs(pose.position.y - p_camera.position.y) < 0.22:
+                    if abs(pose.position.x - p_camera.position.x) < distance \
+                    and abs(pose.position.y - p_camera.position.y) < distance:
                         found = True
                         # print('Pothole already in the list')
                         # print('Pothole coords: ', pose.position)
@@ -147,8 +154,8 @@ class ImageProjection(Node):
                 for j, pose2 in enumerate(ImageProjection.pothole_poses.poses):
                     if pose == pose2:
                         continue
-                    if abs(pose.position.x - pose2.position.x) < 0.21 \
-                    and abs(pose.position.y - pose2.position.y) < 0.21 :
+                    if abs(pose.position.x - pose2.position.x) < distance \
+                    and abs(pose.position.y - pose2.position.y) < distance :
                         pose.position.x = (pose.position.x + pose2.position.x) / 2
                         pose.position.y = (pose.position.y + pose2.position.y) / 2
                         pose.position.z = (pose.position.z + pose2.position.z) / 2
@@ -162,10 +169,11 @@ class ImageProjection(Node):
             self.object_location_pub.publish(ImageProjection.pothole_poses)
 
         for i, pose in enumerate(ImageProjection.pothole_poses.poses):
-            print('map coords', i+1, ':', pose.position)
+            print('pose', i+1, ': x=', pose.position.x, 'y=', pose.position.y)
         print('\n')
 
         if self.visualisation:
+            image_color = cv2.resize(image_color, (0,0), fx=0.5, fy=0.5)
             cv2.imshow("image color", image_color)
             cv2.waitKey(1)
 

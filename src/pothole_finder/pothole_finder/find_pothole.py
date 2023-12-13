@@ -10,7 +10,7 @@ from cv2 import blur, Canny, resize, INTER_CUBIC
 from cv2 import connectedComponentsWithStats
 from numpy import mean
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
+from cv_bridge import CvBridge, CvBridgeError
 
 from time import sleep
 

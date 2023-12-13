@@ -16,7 +16,9 @@ class PotholeCounter(Node):
         )
 
     def pose_callback(self, msg):
-        self.get_logger().info('I heard: "%s"' % msg)
+        for pose in msg.poses:
+            self.get_logger().info('I heard: "%s"' % pose.position)
+        print('\n\n')
 
 def main(args=None):
     rclpy.init(args=args)
