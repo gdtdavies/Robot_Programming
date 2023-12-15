@@ -26,11 +26,11 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'find_pothole = pothole_finder.find_pothole:main',
-            'waypoint_follower = pothole_finder.waypoint_follower:main',
-            'navigator = pothole_finder.navigator:main',
-            'image_projection = pothole_finder.image_projection:main',
-            'pothole_counter = pothole_finder.pothole_counter:main',
+            'count_potholes = pothole_finder.count_potholes:main',
+            'follow_waypoints = pothole_finder.follow_waypoints:main',
+            'map_potholes = pothole_finder.map_potholes:main',
+            'mask_potholes = pothole_finder.mask_potholes:main',
+            'navigate = pothole_finder.navigate:main',
         ],
     },
 )

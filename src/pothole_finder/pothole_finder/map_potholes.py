@@ -1,3 +1,15 @@
+'''
+Title: map_potholes.py
+Author: George Davies
+email: 27421138@students.lincoln.ac.uk
+
+acknowledgements: based on the code from LCAS/CMP9767_LIMO/uol_cmp9767m_tutorials/uol_cmp9767m_tutorials/image_projection_3.py
+
+This node subscribes to the color image topic and the depth image topic
+It detects the potholes in the color image and calculates their 3D coordinates
+It publishes the coordinates in the odom frame as a PoseArray message
+'''
+
 # Python libs
 import rclpy
 from rclpy.node import Node
@@ -12,11 +24,9 @@ from tf2_ros import Buffer, TransformListener
 
 # ROS Messages
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import PoseStamped, Pose, PoseArray
+from geometry_msgs.msg import Pose, PoseArray
 from cv_bridge import CvBridge, CvBridgeError
 from tf2_geometry_msgs import do_transform_pose
-
-import numpy as np
 
 class ImageProjection(Node):
     camera_model = None
@@ -26,7 +36,7 @@ class ImageProjection(Node):
     # aspect ration between color and depth cameras
     # calculated as (color_horizontal_FOV/color_width) / (depth_horizontal_FOV/depth_width) from the dabai camera parameters
     C2D_ASPECT_RATIO = (71.0/640) / (67.9/400) # 0.65353461
-    DISTANCE = 0.17 # distance in meters between two potholes for them to be considered the different potholes and not be merged
+    DISTANCE = 0.185 # distance in meters between two potholes for them to be considered the different potholes and not be merged
 
     # global array to keep the pothole poses over the entire run
     pothole_poses = PoseArray()
@@ -38,26 +48,37 @@ class ImageProjection(Node):
         ImageProjection.pothole_poses.header.frame_id = 'odom'
         
         #subscriber to the camera info topic. it retreives the camera parameters
-        self.camera_info_sub = self.create_subscription(CameraInfo, '/limo/depth_camera_link/camera_info',
-                                                self.camera_info_callback, 
-                                                qos_profile=qos.qos_profile_sensor_data)
+        self.camera_info_sub = self.create_subscription(
+            CameraInfo,
+            '/limo/depth_camera_link/camera_info',
+            self.camera_info_callback, 
+            qos_profile=qos.qos_profile_sensor_data
+        )
         #publisher to the object_location topic. it publishes the location of the detected objects in the map
         # as a PoseArray message
-        self.object_location_pub = self.create_publisher(PoseArray, '/limo/object_location', 10)
+        self.object_location_pub = self.create_publisher(
+            PoseArray, 
+            '/limo/object_location', 
+            10
+        )
 
         # subscriber to the color image topic. it retrieves the color image from the camera and performs the
         # detection of the potholes in its callback function
-        self.image_sub = self.create_subscription(Image, 
-                                                  '/limo/depth_camera_link/image_raw', 
-                                                  self.image_color_callback, 
-                                                  qos_profile=qos.qos_profile_sensor_data)
+        self.image_sub = self.create_subscription(
+            Image, 
+            '/limo/depth_camera_link/image_raw', 
+            self.image_color_callback, 
+            qos_profile=qos.qos_profile_sensor_data
+        )
         
         # subscriber to the depth image topic. it retrieves the depth image from the camera so it can be used
         # to calculate the 3D coordinates of the detected potholes
-        self.image_sub = self.create_subscription(Image, 
-                                                  '/limo/depth_camera_link/depth/image_raw', 
-                                                  self.image_depth_callback, 
-                                                  qos_profile=qos.qos_profile_sensor_data)
+        self.image_sub = self.create_subscription(
+            Image, 
+            '/limo/depth_camera_link/depth/image_raw', 
+            self.image_depth_callback, 
+            qos_profile=qos.qos_profile_sensor_data
+        )
         
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -67,9 +88,14 @@ class ImageProjection(Node):
     #|############################<Misc Funtions>############################|#
     #|#######################################################################|#
     '''
-    wrapper function to get the transform between two frames
+    Params:
+        target_frame: the frame to transform to
+        source_frame: the frame to transform from
+    Returns:
+        transform: the transform between the two frames
+    This is a wrapper function to get the transform between two frames
     calls Buffer.lookup_transform() and returns the transform
-    thows an exception if the transform is not found
+    raises an exception if the transform is not found
     '''
     def get_tf_transform(self, target_frame, source_frame):
         try:
@@ -79,21 +105,39 @@ class ImageProjection(Node):
             self.get_logger().warning(f"Failed to lookup transform: {str(e)}")
             return None
     
+    '''
+    Params:
+        img: the image to be processed
+        mask_lower: the lower bound of the mask
+        mask_upper: the upper bound of the mask
+    Returns:
+        (numLabels, labels, stats, centroids) tuple
+        numLabels: the number of blobs found
+        labels: a matrix with the same size as the image where each pixel has a value of 1 or 0 depending if it is part of a blob or not
+        stats: contrains the following information about each blob:
+            cv2.CC_STAT_LEFT The leftmost (x) coordinate of the bounding box
+            cv2.CC_STAT_TOP The topmost (y) coordinate of the bounding box 
+            cv2.CC_STAT_WIDTH The horizontal size of the bounding box
+            cv2.CC_STAT_HEIGHT The vertical size of the bounding box
+            cv2.CC_STAT_AREA The total area (in pixels) of the connected component
+        centroids: an array with the x and y coordinates of the centroid of each blob
+
+    This function takes an image and returns the blobs in the image  
+    '''
     def get_pohole_stats(self, img, mask_lower=(150, 100, 50), mask_upper=(255, 255, 255)):
         mask = cv2.inRange(img, mask_lower, mask_upper)
         out = cv2.connectedComponentsWithStats(mask , 4, cv2.CV_32S)
-        # numLabels is the number of blobs found
-        # labels is a matrix with the same size as the image where each pixel has a value of 1 or 0 depending if it is part of a blob or not
-        # stats contrains the following information about each blob:
-        #   cv2.CC_STAT_LEFT The leftmost (x) coordinate of the bounding box
-        #   cv2.CC_STAT_TOP The topmost (y) coordinate of the bounding box 
-        #   cv2.CC_STAT_WIDTH The horizontal size of the bounding box
-        #   cv2.CC_STAT_HEIGHT The vertical size of the bounding box
-        #   cv2.CC_STAT_AREA The total area (in pixels) of the connected component
-        # centroids is an array with the x and y coordinates of the centroid of each blob
         (numLabels, labels, stats, centroids) = out
         return (numLabels, labels, stats, centroids)
 
+    '''
+    Params:
+        p_camera: the pothole pose in the camera frame
+    Returns:
+        index: the index of the pothole in the array
+    This function adds the pothole to the array of potholes
+    If the pothole is already in the array, it merges the two potholes
+    '''
     def add_pothole(self, p_camera):
         index = None # index of the pothole in the array
             # check if the array is empty
@@ -121,6 +165,11 @@ class ImageProjection(Node):
                 index = len(ImageProjection.pothole_poses.poses) - 1
         return index
 
+    '''
+    Params:
+        index: the index of the pothole in the array
+    This function merges the pothole with other potholes that are too close
+    '''
     def merge_potholes(self, index):
         current_pose = ImageProjection.pothole_poses.poses[index]
         for pose in ImageProjection.pothole_poses.poses:
@@ -253,15 +302,15 @@ class ImageProjection(Node):
 
         # print out the coordinates in the odom frame
         for i, pose in enumerate(ImageProjection.pothole_poses.poses):
-            print(f'pose {i+1} : x= {round(pose.position.x, 5)}\t y= {round(pose.position.y, 5)}\t z = {round(pose.position.z, 5)}')
+            print(f'pose {str(i+1).zfill(2)} : x= {round(pose.position.x, 5)}\t y= {round(pose.position.y, 5)}\t z = {round(pose.position.z, 5)}')
 
         # show the images
         if self.visualisation:
-            image_color = cv2.resize(image_color, (0,0), fx=0.75, fy=0.75)
+            image_color = cv2.resize(image_color, (0,0), fx=0.5, fy=0.5)
             cv2.imshow("image color", image_color)
             cv2.waitKey(1)
 
-        print('\n')
+        print()
 
 def main(args=None):
     rclpy.init(args=args)
