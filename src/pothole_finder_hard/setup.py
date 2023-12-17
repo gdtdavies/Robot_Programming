@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'navigate = pothole_finder_hard.navigate:main',
             'map_potholes = pothole_finder_hard.map_potholes:main',
+            'collect_data = pothole_finder_hard.collect_data:main',
         ],
     },
 )
