@@ -10,7 +10,6 @@ It detects the potholes in the color image and calculates their 3D coordinates
 It publishes the coordinates in the odom frame as a PoseArray message
 '''
 
-# Python libs
 import rclpy
 from rclpy.node import Node
 from rclpy import qos
