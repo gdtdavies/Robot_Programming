@@ -3,6 +3,8 @@ Title: collect_data.py
 Author: George Davies
 email: 27421138@students.lincoln.ac.uk
 
+Acknowledgements: I used labelImg to label the images.
+
 This script subscribes to the depth camera topic and saves the image as a jpg file.
 '''
 
