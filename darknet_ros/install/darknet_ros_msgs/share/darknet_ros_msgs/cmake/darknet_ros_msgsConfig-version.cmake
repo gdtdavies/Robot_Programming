@@ -1,1 +1,0 @@
-/home/gdtdav/darknet_ros/build/darknet_ros_msgs/ament_cmake_core/darknet_ros_msgsConfig-version.cmake

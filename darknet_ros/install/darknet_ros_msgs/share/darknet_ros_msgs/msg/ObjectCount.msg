@@ -1,1 +1,0 @@
-/home/gdtdav/darknet_ros/darknet_ros_msgs/msg/ObjectCount.msg
