@@ -1,0 +1,18 @@
+# copy this file into .config/Ultralytics folder and keep your uuid
+
+settings_version: 0.0.4
+datasets_dir: /home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/datasets
+weights_dir: /home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/weights
+runs_dir: /home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/runs
+uuid: 9c501e8b138761a4b72d2f7d0ed558642a5fb350bf6611aaddbba78153c47a11
+sync: true
+api_key: ''
+clearml: true
+comet: true
+dvc: true
+hub: true
+mlflow: true
+neptune: true
+raytune: true
+tensorboard: true
+wandb: true

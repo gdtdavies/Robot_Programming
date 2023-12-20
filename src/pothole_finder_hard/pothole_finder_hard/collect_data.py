@@ -20,7 +20,7 @@ import os
 
 class ImageCollector(Node):
 
-    data_path = os.path.join(os.path.dirname(__file__), '../data/raw')
+    data_path = os.path.join(os.path.dirname(__file__), '../yolo/datasets/images/train')
 
     def __init__(self):
         super().__init__("screenshot_collector")

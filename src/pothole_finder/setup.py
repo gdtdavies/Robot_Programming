@@ -27,10 +27,10 @@ setup(
     entry_points={
         'console_scripts': [
             'count_potholes = pothole_finder.count_potholes:main',
-            'follow_waypoints = pothole_finder.follow_waypoints:main',
             'map_potholes = pothole_finder.map_potholes:main',
             'mask_potholes = pothole_finder.mask_potholes:main',
             'navigate = pothole_finder.navigate:main',
+            'nav_to_pose = pothole_finder.nav_to_pose:main',
         ],
     },
 )
