@@ -32,6 +32,8 @@ from tf2_geometry_msgs import do_transform_pose
 # YOLOv8 by Ultralytics (object detection library)
 from ultralytics import YOLO
 
+wd = os.path.dirname(os.path.realpath(__file__))
+
 class PotholeDetector(Node):
     camera_model = None
     image_depth_ros = None
@@ -188,18 +190,20 @@ class PotholeDetector(Node):
         #-YOLOv8---------------------------------------------------------------
         #----------------------------------------------------------------------
 
+        pred_path = wd + '/../../../src/pothole_finder_hard/yolo/runs/detect/predict/'
         # delete the old predictions
-        if os.path.exists('/home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/predict/'):
-            shutil.rmtree('/home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/predict/')
+        if os.path.exists(pred_path):
+            shutil.rmtree(pred_path)
 
         # load the model creted by train_model.py
-        model = YOLO('/home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/yolov8s_trained/weights/best.pt')
+        model_path = wd + '/../../../src/pothole_finder_hard/yolo/runs/detect/yolov8s_trained/weights/best.pt'
+        model = YOLO(model_path)
         # detect the potholes in the image from the camera
         results = model(image_color, save=True, save_conf=True, save_txt=True, conf=0.5)
 
         # get the image and labels file
-        img = cv2.imread('/home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/predict/image0.jpg')
-        labels_files = '/home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/predict/labels/image0.txt'
+        img = cv2.imread(pred_path + '/image0.jpg')
+        labels_files = pred_path + '/labels/image0.txt'
 
         img_h, img_w = img.shape[0], img.shape[1]
 
@@ -223,7 +227,13 @@ class PotholeDetector(Node):
                     # draw a circle at the center of the pothole
                     cv2.circle(img, (int(cx), int(cy)), 4, (0, 255, 0), -1)
 
-                    depth_value = image_depth[int(cy), int(cx)]
+                    cy = img_h - cy # flip the y coordinate
+
+                    # map the coordinates from the image to the depth image
+                    depth_coords = (cx * self.C2D_ASPECT_RATIO, cy * (1/self.C2D_ASPECT_RATIO))
+
+                    # get the depth value at the coordinates
+                    depth_value = image_depth[int(depth_coords[1]), int(depth_coords[0])]
 
                     # if the depth value is too big, it is probably a misreading
                     if depth_value > 5:
@@ -262,7 +272,7 @@ class PotholeDetector(Node):
                     pose.orientation.y = -0.707
                     pose.orientation.z = 0.0
         else:
-            print('Labels file not found')
+            print('No potholes detected in the image')
 
         #----------------------------------------------------------------------
         #-Output---------------------------------------------------------------
@@ -284,9 +294,11 @@ def main(args=None):
         rclpy.spin(pothole_detector)
     except KeyboardInterrupt:
         print(" KeyboardInterrupt")
+        print(f"found {len(PotholeDetector.pothole_poses.poses)} potholes")
     finally:
-        if os.path.exists('/home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/predict/'):
-            shutil.rmtree('/home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/predict/')
+        pred_path = wd + '/../../../src/pothole_finder_hard/yolo/runs/detect/predict/'
+        if os.path.exists(pred_path):
+            shutil.rmtree(pred_path)
         pothole_detector.destroy_node()
 
 if __name__ == '__main__':
