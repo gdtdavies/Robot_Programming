@@ -7,7 +7,7 @@ acknowledgements: based on the code from LCAS/CMP9767_LIMO/uol_cmp9767m_tutorial
 
 This node subscribes to the color image topic and the depth image topic
 It detects the potholes in the color image and calculates their 3D coordinates
-It publishes the coordinates in the odom frame as a PoseArray message
+It publishes the coordinates in the map frame as a PoseArray message
 '''
 
 import rclpy
@@ -23,7 +23,7 @@ from tf2_ros import Buffer, TransformListener
 
 # ROS Messages
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import Pose, PoseArray
+from geometry_msgs.msg import Pose, PoseArray, PoseStamped
 from cv_bridge import CvBridge, CvBridgeError
 from tf2_geometry_msgs import do_transform_pose
 
@@ -35,7 +35,7 @@ class ImageProjection(Node):
     # aspect ration between color and depth cameras
     # calculated as (color_horizontal_FOV/color_width) / (depth_horizontal_FOV/depth_width) from the dabai camera parameters
     C2D_ASPECT_RATIO = (71.0/640) / (67.9/400) # 0.65353461
-    DISTANCE = 0.185 # distance in meters between two potholes for them to be considered the different potholes and not be merged
+    DISTANCE = 0.18 # distance in meters between two potholes for them to be considered the different potholes and not be merged
 
     # global array to keep the pothole poses over the entire run
     pothole_poses = PoseArray()
@@ -44,7 +44,7 @@ class ImageProjection(Node):
         super().__init__('image_projection')
         self.bridge = CvBridge()
 
-        ImageProjection.pothole_poses.header.frame_id = 'odom'
+        ImageProjection.pothole_poses.header.frame_id = 'map'
         
         #subscriber to the camera info topic. it retreives the camera parameters
         self.camera_info_sub = self.create_subscription(
@@ -86,24 +86,26 @@ class ImageProjection(Node):
     #|#######################################################################|#
     #|############################<Misc Funtions>############################|#
     #|#######################################################################|#
+
     '''
     Params:
+        posestamped: the pose to transform
         target_frame: the frame to transform to
-        source_frame: the frame to transform from
     Returns:
-        transform: the transform between the two frames
-    This is a wrapper function to get the transform between two frames
-    calls Buffer.lookup_transform() and returns the transform
-    raises an exception if the transform is not found
+        transformed: the new pose in the target frame
+    This is a wrapper function to get the transformed pose to the target frame
+    calls Buffer.transform() and returns the PoseStamped
+    raises an exception if the transform failed
     '''
-    def get_tf_transform(self, target_frame, source_frame):
+    def tf_transform(self, posestamped, target_frame):
         try:
-            transform = self.tf_buffer.lookup_transform(target_frame, source_frame, rclpy.time.Time())
-            return transform
+            transformed = self.tf_buffer.transform(posestamped, target_frame)
+            return transformed
         except Exception as e:
-            self.get_logger().warning(f"Failed to lookup transform: {str(e)}")
+            self.get_logger().warning(f"Failed to transform pose: {str(e)}")
             return None
-    
+
+
     '''
     Params:
         img: the image to be processed
@@ -131,36 +133,36 @@ class ImageProjection(Node):
 
     '''
     Params:
-        p_camera: the pothole pose in the camera frame
+        pose_map: the pothole pose in the camera frame
     Returns:
         index: the index of the pothole in the array
     This function adds the pothole to the array of potholes
     If the pothole is already in the array, it merges the two potholes
     '''
-    def add_pothole(self, p_camera):
+    def add_pothole(self, pose_map):
         index = None # index of the pothole in the array
             # check if the array is empty
         if len(ImageProjection.pothole_poses.poses) == 0:
-            ImageProjection.pothole_poses.poses.append(p_camera)
+            ImageProjection.pothole_poses.poses.append(pose_map)
             index = 0
         else:
             found = False
             #check if the pothole is already in the list
             for pose in ImageProjection.pothole_poses.poses:
                 # check if the distance between the pothole and the pothole in the list is less than the radius of the pothole
-                if abs(pose.position.x - p_camera.position.x) < self.DISTANCE \
-                and abs(pose.position.y - p_camera.position.y) < self.DISTANCE:
+                if abs(pose.position.x - pose_map.position.x) < self.DISTANCE \
+                and abs(pose.position.y - pose_map.position.y) < self.DISTANCE:
                     found = True
                     # merge the two potholes
                     # the old pothole is weighted more than the new one as the old one is already an aggregate of multiple poses
-                    pose.position.x = (pose.position.x*1.5 + p_camera.position.x*0.5) / 2
-                    pose.position.y = (pose.position.y*1.5 + p_camera.position.y*0.5) / 2
+                    pose.position.x = (pose.position.x*1.5 + pose_map.position.x*0.5) / 2
+                    pose.position.y = (pose.position.y*1.5 + pose_map.position.y*0.5) / 2
                     index = ImageProjection.pothole_poses.poses.index(pose)
                     break
             if not found:
                 # there is no pothole in the list that is close enough to the current pothole
                 # so add it to the list
-                ImageProjection.pothole_poses.poses.append(p_camera)
+                ImageProjection.pothole_poses.poses.append(pose_map)
                 index = len(ImageProjection.pothole_poses.poses) - 1
         return index
 
@@ -199,7 +201,7 @@ class ImageProjection(Node):
     '''
     callback function for the color image subscriber
     it detects the potholes in the image and calculates their 3D coordinates
-    it publishes the coordinates in the odom frame
+    it publishes the coordinates in the map frame
     '''
     def image_color_callback(self, data):
         # wait for camera_model and depth image to arrive
@@ -248,10 +250,11 @@ class ImageProjection(Node):
             cY = image_color.shape[0] - cY 
 
             # map the coordinates in the color image onto depth image
-            depth_coords = (cX * self.C2D_ASPECT_RATIO, cY * (1/self.C2D_ASPECT_RATIO))
+            depth_coords = (image_depth.shape[0]/2 + (cX - image_color.shape[0]) * self.C2D_ASPECT_RATIO,
+                            image_depth.shape[0]/2 + (cY - image_color.shape[0]) * self.C2D_ASPECT_RATIO)
 
             # get the depth reading at the centroid location
-            depth_value = image_depth[int(depth_coords[1]), int(depth_coords[0])]
+            depth_value = image_depth[int(depth_coords[0]), int(depth_coords[1])]
             
             #if the depth value is too big, it is probably a misreading
             if depth_value > 5:
@@ -262,27 +265,30 @@ class ImageProjection(Node):
             camera_coords = [x*depth_value for x in camera_coords] # multiply the vector by depth
 
             #define a point in camera coordinates
-            object_location = Pose()
-            object_location.position.x = camera_coords[0]
-            object_location.position.y = camera_coords[1]
-            object_location.position.z = camera_coords[2]
-            object_location.orientation.w = 1.0
+            object_location = PoseStamped()
+            object_location.header.frame_id = 'depth_camera_link'
+            object_location.header.stamp = rclpy.time.Time().to_msg()
+            object_location.pose.position.x = camera_coords[0]
+            object_location.pose.position.y = camera_coords[1]
+            object_location.pose.position.z = camera_coords[2]
+            object_location.pose.orientation.w = 1.0
 
-            # get the transform from the depth camera link to the odom frame
-            transform = self.get_tf_transform('odom', 'depth_camera_link')
-            p_camera = do_transform_pose(object_location, transform)
-
-            # reject the position if it is outside of the map boudaries
-            if abs(p_camera.position.x) > 1.5 or p_camera.position.y < -1.3  or 0.2 < p_camera.position.y :
+            # transform the point into the map frame
+            pose_map = self.tf_transform(object_location, 'map')
+            # if the transform failed, skip the pothole
+            if pose_map is None:
                 continue
+            # get the pose from the PoseStamped
+            pose_map = pose_map.pose
 
-            # reject the position if it is on the grass
-            if 0.04 < p_camera.position.x and p_camera.position.x < 0.95 and -0.76 < p_camera.position.y and p_camera.position.y < -0.26\
-            or -0.95 < p_camera.position.x and p_camera.position.x < -0.04 and -0.76 < p_camera.position.y and p_camera.position.y < -0.26:
+            # reject the position if it is outside of the map boudaries or on the grass
+            if abs(pose_map.position.x) > 1.5 or pose_map.position.y < -1.3  or 0.2 < pose_map.position.y \
+            or 0.04 < pose_map.position.x and pose_map.position.x < 0.95 and -0.76 < pose_map.position.y and pose_map.position.y < -0.26 \
+            or -0.95 < pose_map.position.x and pose_map.position.x < -0.04 and -0.76 < pose_map.position.y and pose_map.position.y < -0.26:
                 continue
 
             # add the pothole too the list and merge the pothole with other potholes that are too close
-            self.merge_potholes(self.add_pothole(p_camera))
+            self.merge_potholes(self.add_pothole(pose_map))
         
         # set the orientation of the potholes to be straight up and the z coordinate to be 0
         for pose in ImageProjection.pothole_poses.poses:
@@ -299,17 +305,16 @@ class ImageProjection(Node):
         # publish so we can see that in rviz 
         self.object_location_pub.publish(ImageProjection.pothole_poses)
 
-        # print out the coordinates in the odom frame
+        # print out the coordinates in the map frame
+        print('----------------------------------------------------------------')
         for i, pose in enumerate(ImageProjection.pothole_poses.poses):
-            print(f'pose {str(i+1).zfill(2)} : x= {round(pose.position.x, 5)}\t y= {round(pose.position.y, 5)}\t z = {round(pose.position.z, 5)}')
+            print('pose {:2d} :\t x= {:.3f}\t|\ty= {:.3f}'.format(i+1, pose.position.x, pose.position.y))
 
         # show the images
         if self.visualisation:
             image_color = cv2.resize(image_color, (0,0), fx=0.5, fy=0.5)
             cv2.imshow("image color", image_color)
             cv2.waitKey(1)
-
-        print()
 
 def main(args=None):
     rclpy.init(args=args)
