@@ -39,7 +39,7 @@ class PotholeDetector(Node):
     image_depth_ros = None
 
     C2D_ASPECT_RATIO = (71.0/640) / (67.9/400) # 0.65353461
-    DISTANCE = 0.18 # distance in meters between two potholes for them to be considered the different potholes and not be merged
+    DISTANCE = 0.185 # distance in meters between two potholes for them to be considered the different potholes and not be merged
 
     pothole_poses = PoseArray()
 
@@ -196,7 +196,7 @@ class PotholeDetector(Node):
             shutil.rmtree(pred_path)
 
         # load the model creted by train_model.py
-        model_path = wd + '/../../../src/pothole_finder_hard/yolo/runs/detect/yolov8s_trained/weights/best.pt'
+        model_path = wd + '/../../../src/pothole_finder_hard/yolo/runs/detect/tune/weights/best.pt'
         model = YOLO(model_path)
         # detect the potholes in the image from the camera
         results = model(image_color, save=True, save_conf=True, save_txt=True, conf=0.5)

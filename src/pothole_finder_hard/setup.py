@@ -21,7 +21,6 @@ setup(
     entry_points={
         'console_scripts': [
             'navigate = pothole_finder_hard.navigate:main',
-            'map_potholes = pothole_finder_hard.map_potholes:main',
             'collect_data = pothole_finder_hard.collect_data:main',
             'train_model = pothole_finder_hard.train_model:main',
             'detect_potholes = pothole_finder_hard.detect_potholes:main',
