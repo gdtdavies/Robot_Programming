@@ -29,6 +29,9 @@ from geometry_msgs.msg import PoseArray, Pose, PoseStamped
 from cv_bridge import CvBridge, CvBridgeError
 from tf2_geometry_msgs import do_transform_pose
 
+import matplotlib.pyplot as plt
+import numpy as np
+
 # YOLOv8 by Ultralytics (object detection library)
 from ultralytics import YOLO
 
@@ -39,7 +42,7 @@ class PotholeDetector(Node):
     image_depth_ros = None
 
     C2D_ASPECT_RATIO = (71.0/640) / (67.9/400) # 0.65353461
-    DISTANCE = 0.185 # distance in meters between two potholes for them to be considered the different potholes and not be merged
+    DISTANCE = 0.2 # distance in meters between two potholes for them to be considered the different potholes and not be merged
 
     pothole_poses = PoseArray()
 
@@ -82,6 +85,15 @@ class PotholeDetector(Node):
     #|#######################################################################|#
     #|############################<Misc Funtions>############################|#
     #|#######################################################################|#
+
+    # def get_tf_transform(self, target_frame, source_frame):
+    #     try:
+    #         transform = self.tf_buffer.lookup_transform(target_frame, source_frame, rclpy.time.Time())
+    #         return transform
+    #     except Exception as e:
+    #         self.get_logger().warning(f"Failed to lookup transform: {str(e)}")
+    #         return None
+
     '''
     Params:
         posestamped: the pose to transform
@@ -153,6 +165,25 @@ class PotholeDetector(Node):
                 PotholeDetector.pothole_poses.poses.remove(pose)
                 break
 
+    def distance(self, pose, gt):
+        return ((pose.position.x - gt[1])**2 + (pose.position.y - gt[2])**2)**0.5
+
+    def get_ground_truths(self, file):
+        out = []
+        with open(file) as f:
+            for line in f:
+                # print(line)
+                if not line.startswith('*'):
+                    continue
+                line = line.split('|')
+                pothole_nb = int(line[1])
+                cx = float(line[2])
+                cy = float(line[3])
+
+                out.append([pothole_nb, cx, cy])
+        return out
+
+
     #|#######################################################################|#
     #|##########################<Callback Funtions>##########################|#
     #|#######################################################################|#
@@ -210,6 +241,7 @@ class PotholeDetector(Node):
         #----------------------------------------------------------------------
         #-pothole detection----------------------------------------------------
         #----------------------------------------------------------------------
+        gts = self.get_ground_truths(wd + '/../../../ground_truths.txt')
 
         if os.path.exists(labels_files):
             with open(labels_files) as f:
@@ -224,35 +256,49 @@ class PotholeDetector(Node):
                     w = float(label[3]) * img_w
                     h = float(label[4]) * img_h
 
+                    # print(f'cx: {cx}, cy: {cy}, w: {w}, h: {h}')
+
                     # draw a circle at the center of the pothole
                     cv2.circle(img, (int(cx), int(cy)), 4, (0, 255, 0), -1)
 
                     cy = img_h - cy # flip the y coordinate
 
                     # map the coordinates from the image to the depth image
-                    depth_coords = (image_depth.shape[0]/2 + (cx - image_color.shape[0]) * self.C2D_ASPECT_RATIO,
-                                    image_depth.shape[1]/2 + (cy - image_color.shape[1]) * self.C2D_ASPECT_RATIO)
+                    # depth_coords = (image_color.shape[0]/2 + (cx - image_depth.shape[0]/2) * self.C2D_ASPECT_RATIO,
+                    #                 image_color.shape[1]/2 + (cy - image_depth.shape[1]/2) * self.C2D_ASPECT_RATIO)
+                    depth_coords = ((cx - img_w/2) + image_depth.shape[1]/2,
+                                    (img_h/2 - cy) + image_depth.shape[0]/2)
                     # depth_coords = (cx * self.C2D_ASPECT_RATIO, cy * (1/self.C2D_ASPECT_RATIO))
+                    # print(f'depth_coords: {[int(x) for x in depth_coords]}')
+                    # cv2.circle(image_depth, (int(depth_coords[0]), int(depth_coords[1])), 4, (0, 0, 255), -1)
 
                     # get the depth value at the coordinates
-                    depth_value = image_depth[int(depth_coords[0]), int(depth_coords[1])]
+                    depth_value = image_depth[int(depth_coords[1]), int(depth_coords[0])]
+                    # depth_value = image_depth[int(cx), int(cy)]
 
                     # if the depth value is too big, it is probably a misreading
-                    if depth_value > 5:
+                    # print(f'depth_value: {depth_value}')
+                    if depth_value >= 3:
                         continue
 
                     # calculate object's 3d location in camera coords
-                    camera_coords = self.camera_model.projectPixelTo3dRay((cx, cy))
+                    #https://github.com/strawlab/vision_opencv/blob/master/image_geometry/src/image_geometry/cameramodels.py
+                    camera_coords = self.camera_model.projectPixelTo3dRay((cy, cx))
+                    camera_coords = [x/camera_coords[2] for x in camera_coords]
+                    # print(camera_coords)
                     camera_coords = [x*depth_value for x in camera_coords]
 
                     # define a point in camera coordinates
                     object_location = PoseStamped()
                     object_location.header.frame_id = 'depth_camera_link'
                     object_location.header.stamp = rclpy.time.Time().to_msg()
-                    object_location.pose.position.x = camera_coords[0]
+                    object_location.pose.position.x = -camera_coords[0]
                     object_location.pose.position.y = camera_coords[1]
                     object_location.pose.position.z = camera_coords[2]
                     object_location.pose.orientation.w = 1.0
+
+                    # transform = self.get_tf_transform('map', 'depth_camera_link')
+                    # pose_map = do_transform_pose(object_location.pose, transform)
 
                     # transform the point into the map frame
                     pose_map = self.tf_transform(object_location, 'map')
@@ -261,6 +307,7 @@ class PotholeDetector(Node):
                         continue
                     # get the pose from the PoseStamped
                     pose_map = pose_map.pose
+                    # print(f'x: {pose_map.position.x}, y: {pose_map.position.y}')           
 
                     # reject the position if it is outside of the map boudaries or on the grass
                     if abs(pose_map.position.x) > 1.5 or pose_map.position.y < -1.3  or 0.2 < pose_map.position.y \
@@ -270,6 +317,8 @@ class PotholeDetector(Node):
 
                     # add the pothole too the list and merge the pothole with other potholes that are too close
                     self.merge_potholes(self.add_pothole(pose_map))
+                    # PotholeDetector.pothole_poses.poses.append(pose_map)
+
 
                 # set the orientation of the potholes to be straight up and the z coordinate to be 0
                 for pose in PotholeDetector.pothole_poses.poses:
@@ -284,6 +333,22 @@ class PotholeDetector(Node):
         #----------------------------------------------------------------------
         #-Output---------------------------------------------------------------
         #----------------------------------------------------------------------
+        
+
+        # create matplotlib graph with the ground truths and the detected potholes
+        # fig, ax = plt.subplots()
+        # ax.set_aspect('equal')
+        # ax.set_xlim(-1.5, 1.5)
+        # ax.set_ylim(-1.5, 0.5)
+        # ax.set_xlabel('x')
+        # ax.set_ylabel('y')
+        # ax.grid(True, which='both')
+        # ax.axhline(y=0, color='k')
+        # ax.axvline(x=0, color='k')
+        # ax.scatter([x[1] for x in gts], [x[2] for x in gts], c='r', label='ground truth')
+        # ax.scatter([pose.position.x for pose in PotholeDetector.pothole_poses.poses], [pose.position.y for pose in PotholeDetector.pothole_poses.poses], c='b', label='detected')
+        # ax.legend()
+        # plt.show()
 
         # publish so we can see that in rviz 
         self.object_location_pub.publish(PotholeDetector.pothole_poses)
@@ -291,11 +356,21 @@ class PotholeDetector(Node):
         # print out the coordinates in the map frame
         print('----------------------------------------------------------------')
         for i, pose in enumerate(PotholeDetector.pothole_poses.poses):
-            print('pose {:2d} :\t x= {:.3f}\t|\ty= {:.3f}'.format(i+1, pose.position.x, pose.position.y))
+            closest = [0, 99999, 99999]
+            dist_to_gt = 99999
+            for gt in gts[1:]:
+                dist = self.distance(pose, gt)
+                if self.distance(pose, closest) > self.distance(pose, gt):
+                    closest = gt
+                    dist_to_gt = dist
+            
+            print('pose {:2d} :\t x= {:.3f}\t|\ty= {:.3f}\t|\tclosest= {:2d}\t|\tdist= {:3d}cm'.format(i+1, pose.position.x, pose.position.y, closest[0], int(dist_to_gt*100)))
 
         # show the image
         img = cv2.resize(img, (0,0), fx=0.5, fy=0.5)
         cv2.imshow('image', img)
+        image_depth = cv2.resize(image_depth, (0,0), fx=0.5, fy=0.5)
+        cv2.imshow('depth', image_depth)
         cv2.waitKey(1)
 
 def main(args=None):
