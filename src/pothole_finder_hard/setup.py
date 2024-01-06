@@ -25,6 +25,7 @@ setup(
             'train_model = pothole_finder_hard.train_model:main',
             'detect_potholes = pothole_finder_hard.detect_potholes:main',
             'publish_ground_truth = pothole_finder_hard.publish_ground_truth:main',
+            'nav_and_detect = pothole_finder_hard.nav_and_detect:main',
         ],
     },
 )
