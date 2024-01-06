@@ -18,6 +18,7 @@ import cv2
 
 import os
 import shutil
+import math
 
 # ROS libraries
 import image_geometry
@@ -30,11 +31,11 @@ from cv_bridge import CvBridge, CvBridgeError
 from tf2_geometry_msgs import do_transform_pose
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 # YOLOv8 by Ultralytics (object detection library)
 from ultralytics import YOLO
 
+# get the path of the current working directory
 wd = os.path.dirname(os.path.realpath(__file__))
 
 class PotholeDetector(Node):
@@ -85,15 +86,7 @@ class PotholeDetector(Node):
     #|#######################################################################|#
     #|############################<Misc Funtions>############################|#
     #|#######################################################################|#
-
-    # def get_tf_transform(self, target_frame, source_frame):
-    #     try:
-    #         transform = self.tf_buffer.lookup_transform(target_frame, source_frame, rclpy.time.Time())
-    #         return transform
-    #     except Exception as e:
-    #         self.get_logger().warning(f"Failed to lookup transform: {str(e)}")
-    #         return None
-
+        
     '''
     Params:
         posestamped: the pose to transform
@@ -166,14 +159,37 @@ class PotholeDetector(Node):
                 PotholeDetector.pothole_poses.poses.remove(pose)
                 break
 
+    def quaternion_to_euler(self, q):
+        # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_Angles_Conversion
+        w, x, y, z = q.w, q.x, q.y, q.z
+        roll = math.atan2(2*(w*x + y*z), 1 - 2*(x**2 + y**2))
+        pitch = math.asin(2*(w*y - z*x))
+        yaw = math.atan2(2*(w*z + x*y), 1 - 2*(y**2 + z**2))
+        return (roll, pitch, yaw)
+        
+
+    '''
+    Params:
+        pose: the detection pose in the map frame
+        gt: the ground truth of the pothole
+    Returns:
+        the distance between the pothole and the ground truth
+    This function calculates the distance between the pothole and the ground truth
+    '''
     def distance(self, pose, gt):
         return ((pose.position.x - gt[1])**2 + (pose.position.y - gt[2])**2)**0.5
 
+    '''
+    Params:
+        file: the file containing the ground truths
+    Returns:
+        out: a list of the ground truths
+    This function reads the ground truths from the file and returns the x and y coordinates
+    '''
     def get_ground_truths(self, file):
         out = []
         with open(file) as f:
             for line in f:
-                # print(line)
                 if not line.startswith('*'):
                     continue
                 line = line.split('|')
@@ -184,6 +200,11 @@ class PotholeDetector(Node):
                 out.append([pothole_nb, cx, cy])
         return out
 
+    '''
+    Params:
+        gts: the ground truths
+    This function plots the positions of the ground truths and the detected potholes
+    '''
     def plot_potholes(self, gts):
         fig, ax = plt.subplots()
         ax.set_aspect('equal')
@@ -254,6 +275,7 @@ class PotholeDetector(Node):
         img = cv2.imread(pred_path + '/image0.jpg')
         labels_files = pred_path + '/labels/image0.txt'
 
+        # get the image height and width
         img_h, img_w = img.shape[0], img.shape[1]
 
         #----------------------------------------------------------------------
@@ -274,7 +296,6 @@ class PotholeDetector(Node):
                     w = float(label[3]) * img_w
                     h = float(label[4]) * img_h
 
-                    # print(f'cx: {cx}, cy: {cy}, w: {w}, h: {h}')
 
                     # draw a circle at the center of the pothole
                     cv2.circle(img, (int(cx), int(cy)), 4, (0, 255, 0), -1)
@@ -282,29 +303,34 @@ class PotholeDetector(Node):
                     cy = img_h - cy # flip the y coordinate
 
                     # map the coordinates from the image to the depth image
-                    # depth_coords = (image_color.shape[0]/2 + (cx - image_depth.shape[0]/2) * self.C2D_ASPECT_RATIO,
-                    #                 image_color.shape[1]/2 + (cy - image_depth.shape[1]/2) * self.C2D_ASPECT_RATIO)
                     depth_coords = ((cx - img_w/2) + image_depth.shape[1]/2,
                                     (img_h/2 - cy) + image_depth.shape[0]/2)
-                    # depth_coords = (cx * self.C2D_ASPECT_RATIO, cy * (1/self.C2D_ASPECT_RATIO))
-                    # print(f'depth_coords: {[int(x) for x in depth_coords]}')
-                    # cv2.circle(image_depth, (int(depth_coords[0]), int(depth_coords[1])), 4, (0, 0, 255), -1)
 
                     # get the depth value at the coordinates
                     depth_value = image_depth[int(depth_coords[1]), int(depth_coords[0])]
-                    # depth_value = image_depth[int(cx), int(cy)]
 
                     # if the depth value is too big, it is probably a misreading
                     # the detections seem to be more accurate when the depth value is less than 1
-                    # print(f'depth_value: {depth_value}')
                     if depth_value >= 1:
                         continue
 
+                    # get the yaw of the robot
+                    try:
+                        transform_stamped = self.tf_buffer.lookup_transform('map', 'base_link', rclpy.time.Time())
+                    except Exception as e:
+                        print(f"Transform lookup failed: {e}")
+                        return
+                    
+                    # can use roll and pitch to verify that the calcuations are correct. They should be close to 0
+                    (roll, pitch, yaw) = self.quaternion_to_euler(transform_stamped.transform.rotation)
+
                     # calculate object's 3d location in camera coords
                     #https://github.com/strawlab/vision_opencv/blob/master/image_geometry/src/image_geometry/cameramodels.py
-                    # potentially better if using trigonometry to scale to depth
-                    cam_x = cx / self.camera_model.fx() * depth_value
-                    cam_y = cy / self.camera_model.fy() * depth_value
+                    # inspired by the function pixelTo3dRay in code from the link above
+                    # the issue with that function is that 0,0 is the center of the image where it needed to be the bottom left corner
+                    # potentially better if using trigonometry to scale the depth value
+                    cam_x = (cx / self.camera_model.fx()) * (depth_value * abs(math.cos(yaw)))
+                    cam_y = (cy / self.camera_model.fy()) * (depth_value * abs(math.sin(yaw)))
                     cam_z = 1.0
 
                     # define a point in camera coordinates
@@ -323,7 +349,6 @@ class PotholeDetector(Node):
                         continue
                     # get the pose from the PoseStamped
                     pose_map = pose_map.pose
-                    # print(f'x: {pose_map.position.x}, y: {pose_map.position.y}')           
 
                     # reject the position if it is outside of the map boudaries or on the grass
                     if abs(pose_map.position.x) > 1.5 or pose_map.position.y < -1.3  or 0.2 < pose_map.position.y \
@@ -333,7 +358,6 @@ class PotholeDetector(Node):
 
                     # add the pothole too the list and merge the pothole with other potholes that are too close
                     self.merge_potholes(self.add_pothole(pose_map))
-                    # PotholeDetector.pothole_poses.poses.append(pose_map)
 
 
                 # set the orientation of the potholes to be straight up and the z coordinate to be 0
