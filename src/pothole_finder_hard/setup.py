@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='george',
     maintainer_email='27421138@students.lincoln.ac.uk',
-    description='TODO: Package description',
+    description='same as pothole_finder but uses yolov8 to detect the more realistic potholes',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
