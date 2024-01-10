@@ -161,3 +161,6 @@ cython_debug/
 
 src/pothole_finder_hard/yolo/weights/
 .cache
+yolov8*/
+src/pothole_finder_hard/yolo/datasets/labels/train.cache
+src/pothole_finder_hard/yolo/datasets/labels/val.cache
