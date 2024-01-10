@@ -17,15 +17,20 @@ from rclpy import qos
 # OpenCV
 import cv2
 
+import math
+import os
+
 # ROS libraries
 import image_geometry
 from tf2_ros import Buffer, TransformListener
 
 # ROS Messages
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import Pose, PoseArray, PoseStamped
+from geometry_msgs.msg import PoseArray, PoseStamped, TransformStamped
 from cv_bridge import CvBridge, CvBridgeError
 from tf2_geometry_msgs import do_transform_pose
+
+wd = os.path.dirname(os.path.realpath(__file__))
 
 class ImageProjection(Node):
     camera_model = None
@@ -78,6 +83,14 @@ class ImageProjection(Node):
             self.image_depth_callback, 
             qos_profile=qos.qos_profile_sensor_data
         )
+
+        # subscriber to the transform between the map frame and the depth camera frame found in get_transform.cpp
+        self.tf_transform_sub = self.create_subscription(
+            TransformStamped,
+            '/depth_to_map_transform',
+            self.tf_transform_callback,
+            qos_profile=qos.qos_profile_sensor_data
+        )
         
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -104,7 +117,6 @@ class ImageProjection(Node):
         except Exception as e:
             self.get_logger().warning(f"Failed to transform pose: {str(e)}")
             return None
-
 
     '''
     Params:
@@ -184,6 +196,55 @@ class ImageProjection(Node):
                 ImageProjection.pothole_poses.poses.remove(pose)
                 break
 
+    '''
+    Params:
+        q: the quaternion to convert
+    Returns:
+        roll: the roll of the quaternion
+        pitch: the pitch of the quaternion
+        yaw: the yaw of the quaternion
+    This function converts a quaternion to euler angles
+    '''
+    def quaternion_to_euler(self, q):
+        # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_Angles_Conversion
+        w, x, y, z = q.w, q.x, q.y, q.z
+        roll = math.atan2(2*(w*x + y*z), 1 - 2*(x**2 + y**2))
+        pitch = math.asin(2*(w*y - z*x))
+        yaw = math.atan2(2*(w*z + x*y), 1 - 2*(y**2 + z**2))
+        return (roll, pitch, yaw)
+        
+    '''
+    Params:
+        pose: the detection pose in the map frame
+        gt: the ground truth of the pothole
+    Returns:
+        the distance between the pothole and the ground truth
+    This function calculates the distance between the pothole and the ground truth
+    '''
+    def distance(self, pose, gt):
+        return ((pose.position.x - gt[1])**2 + (pose.position.y - gt[2])**2)**0.5
+
+    '''
+    Params:
+        file: the file containing the ground truths
+    Returns:
+        out: a list of the ground truths
+    This function reads the ground truths from the file and returns the x and y coordinates
+    '''
+    def get_ground_truths(self, file):
+        out = []
+        with open(file) as f:
+            for line in f:
+                if not line.startswith('*'):
+                    continue
+                line = line.split('|')
+                pothole_nb = int(line[1])
+                cx = float(line[2])
+                cy = float(line[3])
+
+                out.append([pothole_nb, cx, cy])
+        return out
+
     #|#######################################################################|#
     #|##########################<Callback Funtions>##########################|#
     #|#######################################################################|#
@@ -197,6 +258,10 @@ class ImageProjection(Node):
     '''callback function for the depth image subscriber'''
     def image_depth_callback(self, data):
         self.image_depth_ros = data
+
+    '''callback function for the tf transform subscriber'''
+    def tf_transform_callback(self, data):
+        self.transform = data
 
     '''
     callback function for the color image subscriber
@@ -234,6 +299,8 @@ class ImageProjection(Node):
         #-pothole detection----------------------------------------------------
         #----------------------------------------------------------------------
 
+        gts = self.get_ground_truths(wd + '/../../../ground_truths.txt')
+
         for i in range(1, numLabels): # skip the first component as it is the background
             (cX, cY) = centroids[i] # 0, 0 is the top left corner of the image
             
@@ -250,36 +317,33 @@ class ImageProjection(Node):
             cY = image_color.shape[0] - cY 
 
             # map the coordinates in the color image onto depth image
-            depth_coords = (image_depth.shape[0]/2 + (cX - image_color.shape[0]) * self.C2D_ASPECT_RATIO,
-                            image_depth.shape[0]/2 + (cY - image_color.shape[0]) * self.C2D_ASPECT_RATIO)
+            depth_coords = (image_depth.shape[1]/2 + (cX - image_color.shape[1]),
+                            image_depth.shape[0]/2 + (cY - image_color.shape[0]))
 
             # get the depth reading at the centroid location
-            depth_value = image_depth[int(depth_coords[0]), int(depth_coords[1])]
+            depth_value = image_depth[int(depth_coords[1]), int(depth_coords[0])]
             
             #if the depth value is too big, it is probably a misreading
-            if depth_value > 5:
+            if depth_value <= 0.1 or 1 <= depth_value:
                 continue
 
+            (roll, pitch, yaw) = self.quaternion_to_euler(self.transform.transform.rotation)
+
             # calculate object's 3d location in camera coords
-            camera_coords = self.camera_model.projectPixelTo3dRay((cX, cY)) #project the image coords (x,y) into 3D ray in camera coords 
-            camera_coords = [x*depth_value for x in camera_coords] # multiply the vector by depth
+            cam_x = (cX / self.camera_model.fx()) * (depth_value * abs(math.cos(yaw)))
+            cam_y = (cY / self.camera_model.fy()) * (depth_value * abs(math.sin(yaw)))
+            cam_z = 1.0
 
             #define a point in camera coordinates
             object_location = PoseStamped()
             object_location.header.frame_id = 'depth_camera_link'
             object_location.header.stamp = rclpy.time.Time().to_msg()
-            object_location.pose.position.x = camera_coords[0]
-            object_location.pose.position.y = camera_coords[1]
-            object_location.pose.position.z = camera_coords[2]
+            object_location.pose.position.x = cam_x
+            object_location.pose.position.y = cam_y
+            object_location.pose.position.z = cam_z
             object_location.pose.orientation.w = 1.0
 
-            # transform the point into the map frame
-            pose_map = self.tf_transform(object_location, 'map')
-            # if the transform failed, skip the pothole
-            if pose_map is None:
-                continue
-            # get the pose from the PoseStamped
-            pose_map = pose_map.pose
+            pose_map = do_transform_pose(object_location.pose, self.transform)
 
             # reject the position if it is outside of the map boudaries or on the grass
             if abs(pose_map.position.x) > 1.5 or pose_map.position.y < -1.3  or 0.2 < pose_map.position.y \
@@ -308,7 +372,16 @@ class ImageProjection(Node):
         # print out the coordinates in the map frame
         print('----------------------------------------------------------------')
         for i, pose in enumerate(ImageProjection.pothole_poses.poses):
-            print('pose {:2d} :\t x= {:.3f}\t|\ty= {:.3f}'.format(i+1, pose.position.x, pose.position.y))
+            closest = [0, 99999, 99999]
+            dist_to_gt = 99999
+            for gt in gts[1:]:
+                dist = self.distance(pose, gt)
+                if self.distance(pose, closest) > self.distance(pose, gt):
+                    closest = gt
+                    dist_to_gt = dist
+            
+            print('pose {:2d} :\t x= {:.3f}\t|\ty= {:.3f}\t|\tclosest= {:2d}\t|\tdist= {:.2f}m'.format(i+1, pose.position.x, pose.position.y, closest[0], dist_to_gt))
+
 
         # show the images
         if self.visualisation:

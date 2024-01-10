@@ -26,7 +26,7 @@ from tf2_ros import TransformListener, Buffer
 
 # ROS2 message types
 from sensor_msgs.msg import Image, CameraInfo
-from geometry_msgs.msg import PoseArray, Pose, PoseStamped
+from geometry_msgs.msg import PoseArray, PoseStamped, TransformStamped
 from cv_bridge import CvBridge, CvBridgeError
 from tf2_geometry_msgs import do_transform_pose
 
@@ -41,6 +41,7 @@ wd = os.path.dirname(os.path.realpath(__file__))
 class PotholeDetector(Node):
     camera_model = None
     image_depth_ros = None
+    transform = None
 
     C2D_ASPECT_RATIO = (71.0/640) / (67.9/400) # 0.65353461
     DISTANCE = 0.19 # distance in meters between two potholes for them to be considered the different potholes and not be merged
@@ -53,6 +54,7 @@ class PotholeDetector(Node):
 
         PotholeDetector.pothole_poses.header.frame_id = 'map'
 
+        #subscriber to the camera info topic. it retreives the camera parameters
         self.camera_info_sub = self.create_subscription(
             CameraInfo,
             '/limo/depth_camera_link/camera_info',
@@ -60,12 +62,16 @@ class PotholeDetector(Node):
             qos_profile=qos.qos_profile_sensor_data
         )
 
+        # publisher to the object_location topic. it publishes the location of the detected objects in the map
+        # as a PoseArray message
         self.object_location_pub = self.create_publisher(
             PoseArray, 
             '/limo/object_location', 
             10
         )
 
+        # subscriber to the color image topic. it retrieves the color image from the camera and performs the
+        # detection of the potholes in its callback function
         self.image_sub = self.create_subscription(
             Image, 
             '/limo/depth_camera_link/image_raw', 
@@ -73,10 +79,20 @@ class PotholeDetector(Node):
             qos_profile=qos.qos_profile_sensor_data
         )
 
+        # subscriber to the depth image topic. it retrieves the depth image from the camera so it can be used
+        # to calculate the 3D coordinates of the detected potholes
         self.image_sub = self.create_subscription(
             Image, 
             '/limo/depth_camera_link/depth/image_raw', 
             self.image_depth_callback, 
+            qos_profile=qos.qos_profile_sensor_data
+        )
+
+        # subscriber to the transform between the map frame and the depth camera frame found in get_transform.cpp
+        self.tf_transform_sub = self.create_subscription(
+            TransformStamped,
+            '/depth_to_map_transform',
+            self.tf_transform_callback,
             qos_profile=qos.qos_profile_sensor_data
         )
 
@@ -86,25 +102,6 @@ class PotholeDetector(Node):
     #|#######################################################################|#
     #|############################<Misc Funtions>############################|#
     #|#######################################################################|#
-        
-    '''
-    Params:
-        posestamped: the pose to transform
-        target_frame: the frame to transform to
-    Returns:
-        transformed: the new pose in the target frame
-    This is a wrapper function to get the transformed pose to the target frame
-    calls Buffer.transform() and returns the PoseStamped
-    raises an exception if the transform failed
-    '''
-    def tf_transform(self, posestamped, target_frame):
-        try:
-            posestamped.header.stamp = rclpy.time.Time().to_msg()
-            transformed = self.tf_buffer.transform(posestamped, target_frame)
-            return transformed
-        except Exception as e:
-            self.get_logger().warning(f"Failed to transform pose: {str(e)}")
-            return None
 
     '''
     Params:
@@ -159,6 +156,15 @@ class PotholeDetector(Node):
                 PotholeDetector.pothole_poses.poses.remove(pose)
                 break
 
+    '''
+    Params:
+        q: the quaternion to convert
+    Returns:
+        roll: the roll of the quaternion
+        pitch: the pitch of the quaternion
+        yaw: the yaw of the quaternion
+    This function converts a quaternion to euler angles
+    '''
     def quaternion_to_euler(self, q):
         # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_Angles_Conversion
         w, x, y, z = q.w, q.x, q.y, q.z
@@ -167,7 +173,6 @@ class PotholeDetector(Node):
         yaw = math.atan2(2*(w*z + x*y), 1 - 2*(y**2 + z**2))
         return (roll, pitch, yaw)
         
-
     '''
     Params:
         pose: the detection pose in the map frame
@@ -237,16 +242,22 @@ class PotholeDetector(Node):
     def image_depth_callback(self, data):
         self.image_depth_ros = data
 
+    '''callback function for the tf transform subscriber'''
+    def tf_transform_callback(self, data):
+        self.transform = data
+
     '''
     callback function for the color image subscriber
     it detects the potholes in the image and calculates their 3D coordinates
     it publishes the coordinates in the map frame
     '''
     def image_color_callback(self, data):
-         # wait for camera_model and depth image to arrive
+         # wait for camera_model, depth image, and the transform to arrive
         if self.camera_model is None:
             return
         if self.image_depth_ros is None:
+            return
+        if self.transform is None:
             return
 
         # covert images to open_cv
@@ -266,7 +277,7 @@ class PotholeDetector(Node):
             shutil.rmtree(pred_path)
 
         # load the model creted by train_model.py
-        model_path = wd + '/../../../src/pothole_finder_hard/yolo/runs/detect/tune/weights/best.pt'
+        model_path = wd + '/../../../src/pothole_finder_hard/yolo/runs/detect/tune2/weights/best.pt'
         model = YOLO(model_path)
         # detect the potholes in the image from the camera
         results = model(image_color, save=True, save_conf=True, save_txt=True, conf=0.5)
@@ -309,20 +320,13 @@ class PotholeDetector(Node):
                     # get the depth value at the coordinates
                     depth_value = image_depth[int(depth_coords[1]), int(depth_coords[0])]
 
-                    # if the depth value is too big, it is probably a misreading
+                    # if the depth value is too big or too small, it is probably a misreading
                     # the detections seem to be more accurate when the depth value is less than 1
-                    if depth_value >= 1:
+                    if depth_value <= 0.1 or 1 <= depth_value:
                         continue
-
-                    # get the yaw of the robot
-                    try:
-                        transform_stamped = self.tf_buffer.lookup_transform('map', 'base_link', rclpy.time.Time())
-                    except Exception as e:
-                        print(f"Transform lookup failed: {e}")
-                        return
                     
                     # can use roll and pitch to verify that the calcuations are correct. They should be close to 0
-                    (roll, pitch, yaw) = self.quaternion_to_euler(transform_stamped.transform.rotation)
+                    (roll, pitch, yaw) = self.quaternion_to_euler(self.transform.transform.rotation)
 
                     # calculate object's 3d location in camera coords
                     #https://github.com/strawlab/vision_opencv/blob/master/image_geometry/src/image_geometry/cameramodels.py
@@ -343,12 +347,8 @@ class PotholeDetector(Node):
                     object_location.pose.orientation.w = 1.0
 
                     # transform the point into the map frame
-                    pose_map = self.tf_transform(object_location, 'map')
-                    # if the transform failed, skip the pothole
-                    if pose_map is None:
-                        continue
-                    # get the pose from the PoseStamped
-                    pose_map = pose_map.pose
+                    pose_map = do_transform_pose(object_location.pose, self.transform)
+
 
                     # reject the position if it is outside of the map boudaries or on the grass
                     if abs(pose_map.position.x) > 1.5 or pose_map.position.y < -1.3  or 0.2 < pose_map.position.y \
@@ -358,6 +358,7 @@ class PotholeDetector(Node):
 
                     # add the pothole too the list and merge the pothole with other potholes that are too close
                     self.merge_potholes(self.add_pothole(pose_map))
+                    # PotholeDetector.pothole_poses.poses.append(pose_map)
 
 
                 # set the orientation of the potholes to be straight up and the z coordinate to be 0
@@ -395,8 +396,6 @@ class PotholeDetector(Node):
         # show the image
         img = cv2.resize(img, (0,0), fx=0.5, fy=0.5)
         cv2.imshow('image', img)
-        # image_depth = cv2.resize(image_depth, (0,0), fx=0.5, fy=0.5)
-        # cv2.imshow('depth', image_depth)
         cv2.waitKey(1)
 
 def main(args=None):

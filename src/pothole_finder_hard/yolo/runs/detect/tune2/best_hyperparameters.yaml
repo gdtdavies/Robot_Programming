@@ -1,0 +1,29 @@
+# 300/300 iterations complete ✅ (9955.41s)
+# Results saved to /home/george/Documents/Lincoln-year/Sem1/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/tune2
+# Best fitness=0.69859 observed at iteration 182
+# Best fitness metrics are {'metrics/precision(B)': 1.0, 'metrics/recall(B)': 0.90836, 'metrics/mAP50(B)': 0.94286, 'metrics/mAP50-95(B)': 0.67144, 'val/box_loss': 1.08879, 'val/cls_loss': 0.44693, 'val/dfl_loss': 0.75943, 'fitness': 0.69859}
+# Best fitness model is /home/george/Documents/Lincoln-year/Sem1/Robot_Programming/src/pothole_finder_hard/yolo/runs/detect/yolov8m_evolved183
+# Best fitness hyperparameters are printed below.
+
+lr0: 0.01108
+lrf: 0.01107
+momentum: 0.91025
+weight_decay: 0.00055
+warmup_epochs: 3.92051
+warmup_momentum: 0.90483
+box: 7.25008
+cls: 0.37679
+dfl: 1.01668
+hsv_h: 0.02588
+hsv_s: 0.62292
+hsv_v: 0.38735
+degrees: 0.0
+translate: 0.11097
+scale: 0.69571
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.50177
+mosaic: 0.89342
+mixup: 0.0
+copy_paste: 0.0

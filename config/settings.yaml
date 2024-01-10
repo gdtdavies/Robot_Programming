@@ -1,4 +1,4 @@
-# copy this file into .config/Ultralytics folder and keep your uuid
+# copy this file into .config/Ultralytics folder and keep your uuid and set the 3 paths to your own paths
 
 settings_version: 0.0.4
 datasets_dir: /home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/datasets

@@ -15,7 +15,7 @@ from rclpy import qos
 import cv2
 
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
+from cv_bridge import CvBridge, CvBridgeError
 import os
 
 class ImageCollector(Node):

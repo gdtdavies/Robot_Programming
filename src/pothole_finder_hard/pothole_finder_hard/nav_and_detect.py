@@ -1,5 +1,12 @@
+'''
+Title: nav_and_detect.py
+Author: George Davies
+email: 27421138@students.lincoln.ac.uk
+
+
+This script runs the navigation and detection nodes in sequencially in a loop.
+'''
 import rclpy
-from rclpy.node import Node
 
 import os
 import sys
@@ -22,13 +29,11 @@ def main(args=None):
     try:
         future = asyncio.Future()
         while rclpy.ok():
-            # print("detect")
+            # Run the detection node for 10 seconds
             rclpy.spin_until_future_complete(detector, future, timeout_sec=10.0)
-            # print("sleep")
             time.sleep(5)
-            # print("navigate")
+            # Run the navigation node for 5 seconds
             rclpy.spin_until_future_complete(navigator, future, timeout_sec=5.0)
-            # print("sleep")
             time.sleep(3)
     except KeyboardInterrupt:
         print(" KeyboardInterrupt")

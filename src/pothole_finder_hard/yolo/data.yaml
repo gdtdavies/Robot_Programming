@@ -1,4 +1,4 @@
-path: /home/gdtdav/Robot_Programming/src/pothole_finder_hard/yolo/datasets
+path: /home/george/Documents/Lincoln-year/Sem1/Robot_Programming/src/pothole_finder_hard/yolo/datasets
 train: ./images/train
 val: ./images/val
 test: ./images/test
