@@ -164,3 +164,4 @@ src/pothole_finder_hard/yolo/weights/
 yolov8*/
 src/pothole_finder_hard/yolo/datasets/labels/train.cache
 src/pothole_finder_hard/yolo/datasets/labels/val.cache
+.vscode
