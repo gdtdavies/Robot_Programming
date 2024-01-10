@@ -45,8 +45,8 @@ run the navigator
 ```
 run the publishers
 ```bash
-    ./ground_truth
-    ./get_transform
+    ./ground_truth.sh
+    ./get_transform.sh
 ```
 run the pothole detector
 ```bash
