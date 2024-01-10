@@ -10,7 +10,7 @@
 
 navigation: I used LaserScan to find the distances from the walls. I separated the scans into three sections (left, front, and right). Turn left if the value to the right is too small. Vice-versa for turning right. Go forwards if nothing is close in front, otherwise reverse.
 detection: I used yolov8 to train a model on labelled screenshots from the robot's perspective. Then I tuned the hyperparameters using Yolo's inbuilt tune function.
-map placement: I got the depth value from the depth camera to get the position relative to the camera, then transformed the pose to map coordinates 
+map placement: To avoid duplicate detections, it merges detections that are close. It publises the poses to /object_location, therefore they can be viewed in rviz.
 
 
 ## Run Locally
