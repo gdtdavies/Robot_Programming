@@ -40,6 +40,9 @@ Assignment-Setup.
 
 ## Run Locally
 
+Install ros2 and dependencies
+instructions here -> https://github.com/LCAS/CMP9767_LIMO/wiki/Simulator-Setup
+
 Clone the project
 
 ```bash
