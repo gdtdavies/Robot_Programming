@@ -58,7 +58,7 @@ Clone the project
 Start up gazebo and rviz
 ```bash
     cd shell
-    ./gazebo.sh (or ./gazebo_simple.sh for the simple version)
+    ./gazebo.sh #(or ./gazebo_simple.sh for the simple version)
     ./rviz2.sh
 ```
 run the navigator
@@ -72,7 +72,7 @@ run the publishers
 ```
 run the pothole detector
 ```bash
-    ./detect.sh (or ./map_simple.sh for the simple version)
+    ./detect.sh #(or ./map_simple.sh for the simple version)
 ```
 
 
