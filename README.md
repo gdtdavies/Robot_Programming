@@ -33,6 +33,13 @@ Clone the project
   pip install -r requirements.txt
   colcon build --symlink-install
 ```
+
+Set the yolo paths
+```bash
+  cd /.config/Ultralytics
+  vim settings.yaml #change the 3 paths to the path to the yolo folder in the repo
+```
+
 Start up gazebo and rviz
 ```bash
     cd shell
